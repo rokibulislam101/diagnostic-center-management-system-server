@@ -29,7 +29,7 @@ const client = new MongoClient(uri, {
 
 async function run() {
   try {
-    // await client.connect();
+    await client.connect();
     console.log('Connected to MongoDB');
 
     const userCollection = client.db('diagnosticCenterDb').collection('users');
@@ -78,52 +78,120 @@ async function run() {
       next();
     };
 
-    // User APIs
-    app.get('/users', verifyToken, verifyAdmin, async (req, res) => {
-      const users = await userCollection.find().toArray();
-      res.send(users);
+    // // User APIs
+    // app.get('/users', verifyToken, verifyAdmin, async (req, res) => {
+    //   const users = await userCollection.find().toArray();
+    //   res.send(users);
+    // });
+
+    // Get all users
+    app.get('/users', async (req, res) => {
+      try {
+        const users = await userCollection.find().toArray();
+        res.send(users);
+      } catch (error) {
+        res.status(500).send({ error: 'Failed to fetch users' });
+      }
     });
 
+    // Get a single user by ID
+    app.get('/users/:id', async (req, res) => {
+      const { id } = req.params;
+      try {
+        const user = await userCollection.findOne({ _id: new ObjectId(id) });
+        if (!user) {
+          return res.status(404).send({ error: 'User not found' });
+        }
+        res.send(user);
+      } catch (error) {
+        res.status(500).send({ error: 'Failed to fetch user' });
+      }
+    });
+
+    // Get a user by email
+    app.get('/users/email/:email', async (req, res) => {
+      const { email } = req.params;
+      try {
+        const user = await userCollection.findOne({ email });
+        if (!user) {
+          return res.status(404).send({ error: 'User not found' });
+        }
+        res.send(user);
+      } catch (error) {
+        res.status(500).send({ error: 'Failed to fetch user' });
+      }
+    });
+
+    // Create a new user
     app.post('/users', async (req, res) => {
       const user = req.body;
-      const existingUser = await userCollection.findOne({ email: user.email });
-      if (existingUser) {
-        return res.send({ message: 'User already exists' });
-      }
-      const result = await userCollection.insertOne(user);
-      res.send(result);
-    });
-
-    app.get('/users/:email', async (req, res) => {
-      const email = req.params.email;
-      const user = await userCollection.findOne({ email });
-      if (user) {
-        res.send(user);
-      } else {
-        res.status(404).send({ message: 'User not found' });
-      }
-    });
-
-    app.patch(
-      '/users/admin/:id',
-      verifyToken,
-      verifyAdmin,
-      async (req, res) => {
-        const id = req.params.id;
-        const update = { $set: { role: 'admin' } };
-        const result = await userCollection.updateOne(
-          { _id: new ObjectId(id) },
-          update
-        );
+      try {
+        const existingUser = await userCollection.findOne({
+          email: user.email,
+        });
+        if (existingUser) {
+          return res.send({ message: 'User already exists' });
+        }
+        const result = await userCollection.insertOne(user);
         res.send(result);
+      } catch (error) {
+        res.status(500).send({ error: 'Failed to create user' });
       }
-    );
-
-    app.delete('/users/:id', verifyToken, verifyAdmin, async (req, res) => {
-      const id = req.params.id;
-      const result = await userCollection.deleteOne({ _id: new ObjectId(id) });
-      res.send(result);
     });
+
+    // Update user data
+    app.put('/users/:email', async (req, res) => {
+      const { email } = req.params;
+      const updatedData = req.body;
+      try {
+        const result = await userCollection.updateOne(
+          { email },
+          { $set: updatedData }
+        );
+        if (result.modifiedCount > 0) {
+          const updatedUser = await userCollection.findOne({ email });
+          res.send(updatedUser);
+        } else {
+          res
+            .status(404)
+            .send({ message: 'User not found or no change in data' });
+        }
+      } catch (error) {
+        res.status(500).send({ error: 'Failed to update user' });
+      }
+    });
+
+    // Update user status
+    app.patch('/users/:id/status', async (req, res) => {
+      const { id } = req.params;
+      const { status } = req.body;
+      try {
+        await userCollection.updateOne(
+          { _id: new ObjectId(id) },
+          { $set: { status } }
+        );
+        res.send({ message: 'User status updated successfully' });
+      } catch (error) {
+        res.status(500).send({ error: 'Failed to update user status' });
+      }
+    });
+
+    // Delete a user
+    app.delete('/users/:id', async (req, res) => {
+      const { id } = req.params;
+      try {
+        await userCollection.deleteOne({ _id: new ObjectId(id) });
+        res.send({ message: 'User deleted successfully' });
+      } catch (error) {
+        res.status(500).send({ error: 'Failed to delete user' });
+      }
+    });
+
+    // app.delete('/users/:id', verifyToken, verifyAdmin, async (req, res) => {
+    //   const id = req.params.id;
+    //   const result = await userCollection.deleteOne({ _id: new ObjectId(id) });
+    //   res.send(result);
+    // });
 
     // Test APIs
     app.get('/tests', async (req, res) => {
@@ -272,7 +340,7 @@ async function run() {
     });
 
     // Test the connection
-    // await client.db('admin').command({ ping: 1 });
+    await client.db('admin').command({ ping: 1 });
     console.log(
       'Pinged your deployment. You successfully connected to MongoDB!'
     );
